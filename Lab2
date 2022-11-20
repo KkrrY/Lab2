@@ -1,0 +1,353 @@
+//TODO : TR-11 Kirill Schust
+
+
+namespace OOP_Lab2 {
+    internal static class Lab2 {
+
+        public static void Main(string[] args) {
+
+            IGameEngine player1 = new PremiumAccount("KI", 100);
+            IGameEngine player2 = new SafeAccount("NI", 100);
+
+            IDiceGame game = GameRoom.GetHardGame();
+            game.PlayDiceGame(player1, player2);
+        }
+    }
+
+    interface IDiceGame{
+            int RatingValue { get; set; }
+            void DefineGameRating ();
+            void PlayDiceGame(IGameEngine player1, IGameEngine player2);
+    }
+    interface IGameEngine {
+        void WinGame(IDiceGame gameObj, IGameEngine opponentPlayer);
+        void LoseGame(IDiceGame gameObj, IGameEngine opponentPlayer);
+        void InvokeDraw(IDiceGame gameObj, IGameEngine opponentPlayer);
+        void GetStats();
+
+        void DecreaseCurrentRating(IDiceGame gameObj);
+        void IncreaseCurrentRating(IDiceGame gameObj);
+        void IncreaseGameCounter();
+
+        string UserName { get; set; }
+        string GameStatus { get; set; }
+        int GamesCount { get; set; }
+        int CurrentRating { get; set; }
+        int DiceValue { get; set; }
+        int TmpVal { get; set; }
+
+        List<GameHistory> PlayerData { get; }
+
+    }
+        
+    abstract class GameAccount : IGameEngine {
+        public string UserName { get; set; }
+        public string GameStatus { get; set; }
+
+        private int _currentRating;
+
+        public int CurrentRating 
+            {
+                get { return _currentRating; }
+                set { _currentRating = (_currentRating < 0) ? throw  new ArgumentOutOfRangeException(nameof(_currentRating), "Wrong setter value") : value;}
+            }
+
+
+        public int GamesCount { get; set; }
+        public int DiceValue { get; set; }
+        public int TmpVal { get; set; }
+        
+            public List<GameHistory> PlayerData { get; set; }
+            
+
+
+        public virtual void IncreaseCurrentRating(IDiceGame gameObj) { //virtual to allow overriding abstract class methods 
+                CurrentRating+= gameObj.RatingValue;
+                TmpVal = gameObj.RatingValue;
+        }
+
+        public virtual void DecreaseCurrentRating(IDiceGame gameObj) {
+                CurrentRating-= gameObj.RatingValue;
+                TmpVal = gameObj.RatingValue;
+        }
+            
+        public  void IncreaseGameCounter (){ GamesCount++;}
+            
+            
+        public void WinGame(IDiceGame gameObj, IGameEngine opponentPlayer) { 
+                gameObj.DefineGameRating();
+                GameStatus = "Win" ;
+                IncreaseCurrentRating(gameObj);
+                IncreaseGameCounter();
+                PlayerData.Add(new GameHistory(UserName, opponentPlayer.UserName, gameObj.RatingValue, CurrentRating, GamesCount, GameStatus, GameSession.Id));
+        }
+
+        public void LoseGame(IDiceGame gameObj, IGameEngine opponentPlayer) {
+                gameObj.DefineGameRating();
+                GameStatus = "Lose" ;
+                DecreaseCurrentRating(gameObj);
+                IncreaseGameCounter();
+                if (CurrentRating <= 10) {CurrentRating = 10; Console.WriteLine("\nPLAYER'S ( " + UserName + " ) RATING REACHED MINIMAL VALUE. IT WOULDN'T DROP LOWER THAN 10 ");}
+                PlayerData.Add(new GameHistory(UserName, opponentPlayer.UserName, gameObj.RatingValue, CurrentRating, GamesCount, GameStatus, GameSession.Id));
+        }
+
+        public void InvokeDraw(IDiceGame gameObj, IGameEngine opponentPlayer) {
+                GameStatus = "Draw" ;
+                gameObj.RatingValue = 0;
+                IncreaseGameCounter();
+                PlayerData.Add(new GameHistory(UserName, opponentPlayer.UserName, gameObj.RatingValue, CurrentRating, GamesCount, GameStatus, GameSession.Id));
+        }
+
+        public void GetStats() {
+            foreach (var data in PlayerData) {
+                Console.WriteLine("Game id:" + data.GameId);
+                Console.WriteLine("Player name: " + data.UserName + " | "
+                                  + " Game status: " + data.GameStatus + " | "
+                                  + " Rating count (+/-): " + data.Rating + " | "
+                                  + " Total rating: " + data.WholeRating + " | "
+                                  + " Played against: " + data.OpponentName + " | "
+                                  + " Total games: " + data.GamesCount);
+            }
+        }
+            
+    }
+
+    class DefaultAccount : GameAccount {
+        public DefaultAccount(string userName, int currentRating) {
+            this.UserName = userName;
+            GamesCount = 0;
+            this.CurrentRating = currentRating;
+
+            PlayerData = new List<GameHistory>();
+                
+        }
+    }
+        
+    class SafeAccount : GameAccount { //decreases lost rating per twice
+        
+        public SafeAccount(string userName, int currentRating) {
+            this.UserName = userName;
+            GamesCount = 0;
+            this.CurrentRating = currentRating;
+
+            PlayerData = new List<GameHistory>();
+                
+        }
+            
+        public override void DecreaseCurrentRating(IDiceGame gameObj) {
+            gameObj.RatingValue /= 2;
+            CurrentRating-= gameObj.RatingValue;
+            TmpVal = gameObj.RatingValue;
+        }
+            
+    }
+        
+    class PremiumAccount : GameAccount { //Doubles win points and reduces lost points per twice 
+        public PremiumAccount(string userName, int currentRating) {
+            this.UserName = userName;
+            GamesCount = 0;
+            this.CurrentRating = currentRating;
+
+            PlayerData = new List<GameHistory>();
+                
+        }
+
+        public override void IncreaseCurrentRating(IDiceGame gameObj) {
+            gameObj.RatingValue *= 2;
+            CurrentRating+= gameObj.RatingValue ;
+            TmpVal = gameObj.RatingValue;
+        }
+        public override void DecreaseCurrentRating(IDiceGame gameObj) {
+            gameObj.RatingValue /= 2;
+            CurrentRating-= gameObj.RatingValue ;
+            TmpVal = gameObj.RatingValue;
+        }
+    }
+
+    abstract class GameSession : IDiceGame {
+        private Random _random = new Random();
+        public static int Id { get; private set; }
+        public int RatingValue { get; set; }
+
+        public virtual void PlayDiceGame(IGameEngine player1, IGameEngine player2) {
+            ThrowDices(player1, player2);
+
+            DefineResults(player1, player2);
+
+            PrintSessionLogs(player1, player2);
+            IncId();
+
+            AssignLoop(player1, player2);
+        }
+
+        public virtual void DefineGameRating() {
+            RatingValue = _random.Next(1, 10);
+        }
+
+        private void DefineResults(IGameEngine player1, IGameEngine player2) {
+            if (player1.DiceValue > player2.DiceValue) {
+                player1.WinGame(this, player2);
+                player2.LoseGame(this, player1);
+
+            }
+            else if (player1.DiceValue == player2.DiceValue) {
+                player1.InvokeDraw(this, player2);
+                player2.InvokeDraw(this, player1);
+
+            }
+            else {
+                player2.WinGame(this, player1);
+                player1.LoseGame(this, player2);
+
+            }
+        }
+
+        private void ThrowDices(IGameEngine player1, IGameEngine player2) {
+
+            int value1 = _random.Next(1, 6);
+            int value2 = _random.Next(1, 6);
+
+            player1.DiceValue = value1;
+            player2.DiceValue = value2;
+
+        }
+
+        private static void IncId() {
+            Id++;
+        }
+
+        private void AssignLoop(IGameEngine player1, IGameEngine player2) {
+
+            while (true) {
+                    
+                Console.WriteLine("Do you want to play again? Enter : \" yes \" or \" no \" ");
+                Console.WriteLine("You can print matches information using \" print player1 / player2 \" command");
+                string name = Console.ReadLine();
+                switch (name) {
+                    case "yes":
+                        PlayDiceGame(player1, player2);
+                        break;
+                    case "no":
+                        Environment.Exit(0);
+                        break;
+                    case "print player1":
+                        player1.GetStats();
+                        break;
+                    case "print player2":
+                        player2.GetStats();
+                        break;
+                    default:
+                        Console.WriteLine("Enter the right command, please");
+                        break;
+                }
+
+            }
+        }
+
+        protected virtual void PrintSessionLogs(IGameEngine player1, IGameEngine player2) {
+            Console.WriteLine("\nPlayer1: " + player1.UserName + " VS Player 2: " + player2.UserName);
+            Console.WriteLine("Player's dice value is: " + player1.DiceValue + ", " + player2.UserName + " dice value is " + player2.DiceValue);
+
+            if (player1.DiceValue > player2.DiceValue) {
+                Console.WriteLine("Player 1 : " + player1.UserName + " won the game");
+                Console.WriteLine("Player's 1 rating increased by " + player1.TmpVal + " and equals : " + player1.CurrentRating);
+                Console.WriteLine("Player's 2 rating decreased by " + player2.TmpVal + " and equals : " + player2.CurrentRating);
+            }
+            else if (player1.DiceValue < player2.DiceValue) {
+                Console.WriteLine("Player 2 : " + player2.UserName + " won the game");
+                Console.WriteLine("Player's 1 rating decreased by " + player1.TmpVal + " and equals : " + player1.CurrentRating);
+                Console.WriteLine("Player's 2 rating increased by " + player2.TmpVal + " and equals : " + player2.CurrentRating);
+            }
+            else {
+                    Console.WriteLine("It's draw, dices are equal");
+            }
+        }
+    }
+    class DefaultGame : GameSession { }
+    class TrainingGame : GameSession {
+
+        public override void DefineGameRating() {
+            RatingValue = 0;
+        }
+
+        protected override void PrintSessionLogs(IGameEngine player1, IGameEngine player2) {
+                
+            Console.WriteLine("\nPlayer1: " + player1.UserName + " VS Player 2: " + player2.UserName);
+            Console.WriteLine("Player's dice value is: "+ player1.DiceValue +", " + player2.UserName + " dice value is "+ player2.DiceValue);
+
+            if (player1.DiceValue > player2.DiceValue) {
+                Console.WriteLine("Player 1 : " + player1.UserName + " won the game");
+                Console.WriteLine("Player's rank doesn't change while training game sessions");
+            }
+            else if (player1.DiceValue < player2.DiceValue) {
+                Console.WriteLine("Player 2 : " + player2.UserName + " won the game");
+                Console.WriteLine("Player's rank doesn't change while training game sessions");
+            }
+            else {
+                Console.WriteLine("It's draw, dices are equal");
+            }
+        }
+    }
+
+    class HardGame : GameSession { //doubles lost and won rating
+        public override void DefineGameRating() {
+            base.DefineGameRating();
+            RatingValue *= 2;
+        }
+    }
+        
+
+    class GameHistory {
+            
+        public string GameId { get; set; } = "2022";
+        private string _i;
+        public string UserName { get; }
+        public string OpponentName { get; }
+        public int Rating { get; }
+        public int WholeRating { get; }
+        public int GamesCount { get; }
+        public string GameStatus { get; }
+
+        /*private*/public GameHistory(string userName, string opponentName, int obtainedRating, int wholeRating, int gamesCount, string gameStatus, int id) 
+        {
+            this.UserName = userName;
+            this.OpponentName = opponentName;
+            Rating = obtainedRating;
+            this.WholeRating = wholeRating;
+            this.GamesCount = gamesCount;
+            this.GameStatus = gameStatus;
+                
+            _i = id.ToString();
+            GameId += _i;
+        }
+            /*
+             public static void recordData (IGameEngine player1, IGameEngine player2)
+            {
+                if (player1.gamesCount == 0) throw new ArgumentNullException(nameof(player1.gamesCount), "Null argument exception : trying to write empty data");
+                player1.playerData.Add(new GameHistory(player1.userName, player2.userName, player1.ratingValue, player1.currentRating, player1.gamesCount, player1.gameStatus, GameSession.id));
+                player2.playerData.Add(new GameHistory(player2.userName, player1.userName, player2.ratingValue, player2.currentRating, player2.gamesCount, player2.gameStatus, GameSession.id));
+            }
+            */
+            
+            
+    }
+
+    class GameRoom {
+        public static IDiceGame GetDefaultGame() { //methods doesn't refer to instances data, so they could be static 
+            Console.WriteLine("Default Game has started! Enjoy your dices!");
+            return new DefaultGame();
+        }
+            
+        public static IDiceGame GetTrainingGame () {
+            Console.WriteLine("Training Game has started! Players don't lose their rating.");
+            return new TrainingGame();
+        }
+
+        public static IDiceGame GetHardGame(){
+            Console.WriteLine("All in game has started! Players lose and earn more points (x2) !");
+            return new HardGame();
+        }
+    }
+        
+}
+    
